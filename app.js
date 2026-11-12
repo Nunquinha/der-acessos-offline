@@ -202,7 +202,8 @@ $('install').onclick=async()=>{if(installPrompt){await installPrompt.prompt();in
 async function prepareOffline(){
   if(!('serviceWorker' in navigator)){ $('offline-ready').textContent='Este navegador não pode instalar o modo offline.';return; }
   try{
-    const registration=await navigator.serviceWorker.register('./sw.js');
+    const registration=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});
+    registration.update().catch(()=>{});
     const worker=registration.installing || registration.waiting || registration.active;
     const mark=()=>{
       if(worker?.state==='activated' || registration.active){

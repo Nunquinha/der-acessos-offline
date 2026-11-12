@@ -1,7 +1,17 @@
-const CACHE = 'der-campo-shell-v3';
+const CACHE = 'der-campo-shell-v4';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './core.js', './storage.js', './config.js', './manifest.webmanifest', './der.jpg', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
+  event.waitUntil((async()=>{
+    const cache=await caches.open(CACHE);
+    // Evita montar uma atualização com HTML e módulos antigos do cache HTTP.
+    for(const asset of ASSETS){
+      const canonical=new URL(asset,self.registration.scope);
+      const fresh=new URL(canonical);fresh.searchParams.set('build',CACHE);
+      const response=await fetch(fresh,{cache:'reload'});
+      if(!response.ok)throw Error('Arquivo offline indisponível: '+asset);
+      await cache.put(canonical,response);
+    }
+  })());
   // A nova versão aguarda o fechamento das abas para não interromper um cadastro.
 });
 self.addEventListener('activate', event => event.waitUntil((async () => {
