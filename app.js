@@ -1,11 +1,38 @@
 import {config, TEST_MODE} from './config.js';
 import {PHOTO_LABELS, road, duplicate, validate, deliver} from './core.js';
 import {database, getDraft, saveDraft, allRecords, commitRecord, updateRecord} from './storage.js';
-const $ = id => document.getElementById(id), form = $('survey');
+const aliases={survey:'form',capture:'public-app',save:'submit',message:'error',maps:'map-link'};
+const $ = id => document.getElementById(aliases[id]||id), form = $('survey');
 const photos = [null,null,null], photoUrls = [null,null,null];
-let ready=false, saving=false, pending=0, syncRunning=false, recordId=crypto.randomUUID();
+let ready=false, saving=false, pending=0, syncRunning=false, recordId=crypto.randomUUID(), step=0;
 let writes=Promise.resolve(), photoWork=Promise.resolve(), installPrompt;
-function message(text, error=false) { $('message').hidden=false; $('message').textContent=text; $('message').classList.toggle('error',error); }
+function message(text, error=false) { $('message').hidden=false; $('message').classList.remove('hidden'); $('message').textContent=text; $('message').classList.toggle('error',error); }
+function showStep(){
+  document.querySelectorAll('.panel').forEach((panel,i)=>panel.classList.toggle('hidden',i!==step));
+  document.querySelectorAll('.step').forEach((node,i)=>{
+    node.classList.toggle('current',i===step);node.classList.toggle('done',i<step);
+    if(i===step)node.setAttribute('aria-current','step');else node.removeAttribute('aria-current');
+  });
+  $('back').classList.toggle('hidden',step===0);$('next').classList.toggle('hidden',step===3);$('save').classList.toggle('hidden',step!==3);
+  if(step===3){
+    const labels={responsavel:'Responsável pelo cadastro',natureza:'Natureza jurídica',municipio:'Município',rodovia:'Rodovia',km:'Quilômetro',lado:'Lado',latitude:'Latitude',longitude:'Longitude',observacoes:'Observações'},values=data();
+    $('review').replaceChildren();
+    for(const [key,label]of Object.entries(labels)){
+      const div=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=values[key]||'Não informado';div.append(dt,dd);$('review').append(div);
+    }
+    $('review-photos').replaceChildren();
+    photoUrls.forEach((url,i)=>{if(url){const img=new Image();img.src=url;img.alt=PHOTO_LABELS[i];img.className='preview-photo';$('review-photos').append(img);}});
+  }
+}
+function advance(){
+  if(pending){message('Aguarde a preparação das fotos.',true);return;}
+  const panel=document.querySelector('.panel[data-panel="'+step+'"]');
+  for(const input of panel.querySelectorAll('input,select,textarea'))if(!input.reportValidity())return;
+  if(step===1){try{form.elements.rodovia.value=road(form.elements.rodovia.value);}catch(error){message(error.message,true);return;}}
+  if(step===2 && photos.some(photo=>!photo)){message('As três fotos são obrigatórias: frontal, lado direito e lado esquerdo.',true);return;}
+  if(step<3){step++;showStep();window.scrollTo({top:0,behavior:'smooth'});}
+}
+$('next').onclick=advance;$('back').onclick=()=>{if(step>0){step--;showStep();}};
 function data() { return Object.fromEntries(new FormData(form)); }
 function buttons() { $('save').disabled=!ready || saving || pending>0; $('sync').disabled=!config.endpoint || !navigator.onLine || syncRunning; }
 function map() {
@@ -34,12 +61,13 @@ form.elements.rodovia.addEventListener('blur',()=>{
   try{form.elements.rodovia.value=road(form.elements.rodovia.value);draft();}catch{}
 });
 function drawPhoto(index) {
-  const node=$('photo-'+index), img=node.querySelector('img');
+  const node=$('photo-'+index), label=node.querySelector('label');
   if(photoUrls[index]) URL.revokeObjectURL(photoUrls[index]);
   photoUrls[index]=photos[index] ? URL.createObjectURL(photos[index]) : null;
-  img.hidden=!photos[index];
-  if(photos[index]) img.src=photoUrls[index]; else img.removeAttribute('src');
-  node.querySelector('small').textContent=photos[index] ? 'Foto guardada · '+Math.round(photos[index].size/1024)+' KB' : 'Foto obrigatória';
+  label.replaceChildren();
+  if(photos[index]){const img=new Image();img.src=photoUrls[index];img.alt=PHOTO_LABELS[index];label.append(img);}
+  else{const plus=document.createElement('span');plus.className='plus';plus.textContent='+';const title=document.createElement('span');title.textContent='Foto '+(index+1)+' — '+PHOTO_LABELS[index]+' *';title.style.textAlign='center';const small=document.createElement('small');small.textContent='Adicionar imagem';label.append(plus,title,small);}
+  const status=node.querySelector('.photo-size');status.hidden=!photos[index];status.textContent=photos[index] ? 'Foto guardada · '+Math.round(photos[index].size/1024)+' KB' : '';
 }
 async function prepare(file) {
   if(!['image/jpeg','image/png','image/webp'].includes(file.type)) throw Error('Escolha JPG, PNG ou WebP. Se a câmera gerar HEIC/HEIF, altere para JPG.');
@@ -71,19 +99,18 @@ async function prepare(file) {
 PHOTO_LABELS.forEach((label,index)=>{
   const box=document.createElement('div');box.className='photo';box.id='photo-'+index;
   const title=document.createElement('label');title.htmlFor='file-'+index;title.textContent='Foto '+(index+1)+' — '+label;
-  const img=new Image();img.alt=label;img.hidden=true;
   const input=document.createElement('input');input.id='file-'+index;input.type='file';input.accept='image/jpeg,image/png,image/webp';
-  const note=document.createElement('small');note.textContent='Foto obrigatória';
+  const note=document.createElement('small');note.className='photo-size';note.hidden=true;
   input.onchange=()=>{
     const file=input.files[0];if(!file)return;
-    pending++;input.disabled=true;buttons();note.textContent='Preparando foto…';
+    pending++;input.disabled=true;box.dataset.processing='true';buttons();note.hidden=false;note.textContent='Preparando foto…';
     photoWork=photoWork.catch(()=>{}).then(async()=>{
       try{photos[index]=await prepare(file);drawPhoto(index);await draft();}
       catch(error){drawPhoto(index);message('Foto '+(index+1)+': '+error.message,true);}
-      finally{pending--;input.disabled=false;input.value='';buttons();}
+      finally{pending--;input.disabled=false;input.value='';delete box.dataset.processing;buttons();}
     });
   };
-  box.append(title,img,input,note);$('photos').append(box);
+  box.append(title,input,note);$('photos').append(box);drawPhoto(index);
 });
 $('gps').onclick=()=>{
   if(!navigator.geolocation){message('Este navegador não oferece localização. Preencha as coordenadas manualmente.',true);return;}
@@ -99,6 +126,7 @@ $('gps').onclick=()=>{
 };
 form.addEventListener('submit',async event=>{
   event.preventDefault();if(saving || pending || !ready)return;
+  if(step!==3){advance();return;}
   saving=true;buttons();
   try{
     const normalized=validate(data(),photos);
@@ -111,7 +139,7 @@ form.addEventListener('submit',async event=>{
     const name=form.elements.responsavel.value;
     form.reset();form.elements.responsavel.value=name;
     photos.fill(null);PHOTO_LABELS.forEach((_,i)=>drawPhoto(i));recordId=crypto.randomUUID();map();
-    $('draft-status').textContent='';
+    $('draft-status').textContent='';step=0;showStep();
     message('Acesso guardado neste celular com as três fotos. Você já pode cadastrar outro. O envio ainda precisa ser confirmado pelo sistema.');
     await render();
     if(navigator.onLine && config.endpoint) sync();
@@ -140,8 +168,10 @@ function chooseTab(queue) {
   $('tab-form').toggleAttribute('aria-current',!queue);$('tab-queue').toggleAttribute('aria-current',queue);
   if(!queue)$('tab-form').setAttribute('aria-current','page');else $('tab-queue').setAttribute('aria-current','page');
   if(queue)render().catch(error=>message(error.message,true));
+  if($('queue-mobile'))$('queue-mobile').textContent=queue?'Novo cadastro':'Cadastros neste celular';
 }
-$('tab-form').onclick=()=>chooseTab(false);$('tab-queue').onclick=()=>chooseTab(true);
+$('tab-form').onclick=event=>{event.preventDefault();chooseTab(false);};$('tab-queue').onclick=event=>{event.preventDefault();chooseTab(true);};
+if($('queue-mobile'))$('queue-mobile').onclick=()=>chooseTab(!$('capture').hidden);
 async function base64(blob){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(blob);});}
 async function transport(record){
   // Nunca usa no-cors: uma resposta ilegível não comprova que o servidor guardou os dados.
@@ -190,7 +220,7 @@ if($('check'))$('check').onclick=async()=>{
 if($('clear-draft'))$('clear-draft').onclick=async()=>{
   if(saving||pending)return;
   if(!confirm('Limpar somente o rascunho em preenchimento? Os acessos já guardados não serão alterados.'))return;
-  form.reset();photos.fill(null);PHOTO_LABELS.forEach((_,i)=>drawPhoto(i));recordId=crypto.randomUUID();map();
+  form.reset();photos.fill(null);PHOTO_LABELS.forEach((_,i)=>drawPhoto(i));recordId=crypto.randomUUID();map();step=0;showStep();
   await draft().catch(()=>{});
 };
 function connection(){ $('connection').textContent=navigator.onLine?'Conexão disponível':'Sem internet · salvamento local';buttons(); }
@@ -226,7 +256,7 @@ try{
     PHOTO_LABELS.forEach((_,i)=>drawPhoto(i));
     $('draft-status').textContent='Rascunho recuperado deste celular.';
   }
-  ready=true;map();connection();await render();prepareOffline();
+  ready=true;map();connection();showStep();await render();prepareOffline();
   if(navigator.storage?.persist)navigator.storage.persist().catch(()=>{});
   if(!config.endpoint)message(TEST_MODE ? 'TESTE LOCAL ISOLADO: nenhum cadastro será enviado. Não use esta área para levantamentos reais.' : 'Versão de preparação: o envio ao sistema ainda não foi conectado. Não usar em campo até a liberação.',true);
   else sync();
