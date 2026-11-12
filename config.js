@@ -1,3 +1,2 @@
-// Configurar somente depois de conectar e testar um endpoint idempotente do sistema atual.
-// O aplicativo não envia dados enquanto endpoint for null.
-export const config = Object.freeze({ endpoint: null });
+// Somente envio público. Consultas, Excel, PDF e exclusões seguem na gestão autenticada.
+export const config = Object.freeze({ endpoint: 'https://script.google.com/macros/s/AKfycbzEJ1esTc7eFahvwxJp3oM-u1FDaFuiHCKB0OwQPu6qGTst8MiCK2PB5b8vrgMcxsn_/exec' });

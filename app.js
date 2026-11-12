@@ -175,6 +175,18 @@ async function sync(){
   finally{syncRunning=false;buttons();await render();}
 }
 $('sync').onclick=sync;
+$('check').onclick=async()=>{
+  $('check').disabled=true;$('check-status').textContent='Verificando…';
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
+  try{
+    if(!config.endpoint)throw Error('Envio ainda não configurado.');
+    const response=await fetch(config.endpoint,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify({version:1,type:'health'}),signal:controller.signal,credentials:'omit',cache:'no-store'});
+    const result=await response.json();
+    if(!response.ok||result?.ok!==true||result.service!=='der-offline')throw Error('Resposta não reconhecida.');
+    $('check-status').textContent='Conexão com o sistema confirmada. Nenhum cadastro foi enviado neste teste.';
+  }catch(error){$('check-status').textContent='Conexão não confirmada. Os cadastros permanecem neste celular. '+error.message;}
+  finally{clearTimeout(timer);$('check').disabled=false;}
+};
 function connection(){ $('connection').textContent=navigator.onLine?'Conexão disponível':'Sem internet · salvamento local';buttons(); }
 window.addEventListener('online',()=>{connection();sync();});window.addEventListener('offline',connection);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){render().catch(()=>{});sync();}});
