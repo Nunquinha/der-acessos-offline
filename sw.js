@@ -1,4 +1,4 @@
-const CACHE = 'der-campo-shell-v2';
+const CACHE = 'der-campo-shell-v3';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './core.js', './storage.js', './config.js', './manifest.webmanifest', './der.jpg', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));

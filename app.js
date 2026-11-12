@@ -1,4 +1,4 @@
-import {config} from './config.js';
+import {config, TEST_MODE} from './config.js';
 import {PHOTO_LABELS, road, duplicate, validate, deliver} from './core.js';
 import {database, getDraft, saveDraft, allRecords, commitRecord, updateRecord} from './storage.js';
 const $ = id => document.getElementById(id), form = $('survey');
@@ -133,7 +133,7 @@ async function render() {
     const note=document.createElement('p');note.textContent=record.error || '';
     card.append(title,state,details,coords,note);$('records').append(card);
   }
-  $('sync-info').textContent=config.endpoint ? 'Com sinal, os pendentes serão enviados enquanto este aplicativo estiver aberto.' : 'Envio ainda não conectado ao sistema. Os cadastros ficam somente neste celular. Esta versão não está liberada para uso em campo.';
+  $('sync-info').textContent=config.endpoint ? 'Com sinal, os pendentes serão enviados enquanto este aplicativo estiver aberto.' : TEST_MODE ? 'TESTE LOCAL ISOLADO — nenhum registro desta área será enviado. O armazenamento é separado dos levantamentos reais.' : 'Envio ainda não conectado ao sistema. Os cadastros ficam somente neste celular. Esta versão não está liberada para uso em campo.';
 }
 function chooseTab(queue) {
   $('capture').hidden=queue;$('queue').hidden=!queue;
@@ -175,7 +175,7 @@ async function sync(){
   finally{syncRunning=false;buttons();await render();}
 }
 $('sync').onclick=sync;
-$('check').onclick=async()=>{
+if($('check'))$('check').onclick=async()=>{
   $('check').disabled=true;$('check-status').textContent='Verificando…';
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
   try{
@@ -186,6 +186,12 @@ $('check').onclick=async()=>{
     $('check-status').textContent='Conexão com o sistema confirmada. Nenhum cadastro foi enviado neste teste.';
   }catch(error){$('check-status').textContent='Conexão não confirmada. Os cadastros permanecem neste celular. '+error.message;}
   finally{clearTimeout(timer);$('check').disabled=false;}
+};
+if($('clear-draft'))$('clear-draft').onclick=async()=>{
+  if(saving||pending)return;
+  if(!confirm('Limpar somente o rascunho em preenchimento? Os acessos já guardados não serão alterados.'))return;
+  form.reset();photos.fill(null);PHOTO_LABELS.forEach((_,i)=>drawPhoto(i));recordId=crypto.randomUUID();map();
+  await draft().catch(()=>{});
 };
 function connection(){ $('connection').textContent=navigator.onLine?'Conexão disponível':'Sem internet · salvamento local';buttons(); }
 window.addEventListener('online',()=>{connection();sync();});window.addEventListener('offline',connection);
@@ -221,6 +227,6 @@ try{
   }
   ready=true;map();connection();await render();prepareOffline();
   if(navigator.storage?.persist)navigator.storage.persist().catch(()=>{});
-  if(!config.endpoint)message('Versão de preparação: o envio ao sistema ainda não foi conectado. Não usar em campo até a liberação.',true);
+  if(!config.endpoint)message(TEST_MODE ? 'TESTE LOCAL ISOLADO: nenhum cadastro será enviado. Não use esta área para levantamentos reais.' : 'Versão de preparação: o envio ao sistema ainda não foi conectado. Não usar em campo até a liberação.',true);
   else sync();
 }catch(error){message('Não foi possível abrir o armazenamento do celular. '+error.message,true);$('offline-ready').textContent='Armazenamento indisponível';}

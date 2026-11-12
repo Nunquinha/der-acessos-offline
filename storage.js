@@ -1,4 +1,5 @@
-const NAME = 'der-acessos-campo-v1';
+import {TEST_MODE} from './config.js';
+const NAME = 'der-acessos-campo-v1' + (TEST_MODE ? '-teste-isolado' : '');
 let opening;
 export function database() {
   return opening ||= new Promise((resolve, reject) => {
